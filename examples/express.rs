@@ -1,20 +1,3 @@
-# server_nano
-
-A tiny, fast, and friendly web server written in rust and inspired by express.
-It uses [may](https://github.com/Xudong-Huang/may) to coroutines
-
-## Usage
-
-First, add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-server_nano = "0.1.4"
-```
-
-Now, you can write you server
-
-```rust,no_run
 use server_nano::{json, Server};
 
 fn main() {
@@ -49,5 +32,3 @@ fn main() {
 
     app.listen("127.0.0.1:8080").unwrap();
 }
-
-```
