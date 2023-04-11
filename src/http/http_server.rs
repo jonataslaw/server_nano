@@ -110,7 +110,7 @@ fn each_connection_loop<T: HttpService>(stream: &mut TcpStream, mut service: T) 
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn each_connection_loop<T: HttpService>(stream: &mut TcpStream, mut service: T) -> io::Result<()> {
     use crate::response::response;
     let mut req_buf = BytesMut::with_capacity(BUF_LEN);
@@ -133,7 +133,7 @@ fn each_connection_loop<T: HttpService>(stream: &mut TcpStream, mut service: T) 
             while let Some(req) = decode::decode(&req_buf, &mut headers)? {
                 let len = req.len();
                 let mut res = Response::new(&mut body_buf);
-                match service.call(req, &mut res) {
+                match service.handler(req, &mut res) {
                     Ok(()) => response::encode(res, &mut res_buf),
                     Err(e) => response::encode_error(e, &mut res_buf),
                 }
