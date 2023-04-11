@@ -1,6 +1,6 @@
 [package]
 name = "server_nano"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Jonatas Borges <jonataslaw@hotmail.com>"]
 license = "MIT"
