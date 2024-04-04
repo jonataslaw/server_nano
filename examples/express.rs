@@ -3,7 +3,10 @@ use server_nano::{json, Server};
 fn main() {
     let mut app = Server::new();
 
-    app.get("/", |_, res| res.send("welcome to home page!"));
+    app.get("/", |_, res| {
+        println!("GET /");
+        res.send("welcome to home page!")
+    });
 
     app.get("/user/:id", |req, res| {
         let user_id = req.parameter("id").unwrap();

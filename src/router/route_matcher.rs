@@ -1,8 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::io;
 use std::sync::Arc;
 
-use crate::RouteHandler;
+use crate::request::request::Request;
+use crate::Response;
+
+pub type RouteHandler =
+    Box<dyn Fn(Request, &mut Response) -> io::Result<()> + Send + Sync + 'static>;
 
 #[derive(Clone)]
 pub struct RouteMatcher {
@@ -11,9 +16,9 @@ pub struct RouteMatcher {
 
 struct RouteNode {
     method: String,
+    handler: Arc<RouteHandler>,
     path: String,
     segments: Vec<Segment>,
-    handler: Arc<RouteHandler>,
 }
 
 impl Clone for RouteNode {
