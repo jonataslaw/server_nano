@@ -4,9 +4,10 @@ use std::io::{self, Read, Write};
 use std::mem::MaybeUninit;
 use std::net::ToSocketAddrs;
 
-
 use bytes::{Buf, BytesMut};
 
+#[cfg(unix)]
+use bytes::BufMut;
 #[cfg(unix)]
 use may::io::WaitIo;
 use may::net::{TcpListener, TcpStream};
@@ -121,6 +122,8 @@ pub struct HttpServer<T>(pub T);
 
 #[cfg(unix)]
 fn each_connection_loop<T: HttpService>(stream: &mut TcpStream, mut service: T) -> io::Result<()> {
+    use crate::{request, response};
+
     let mut req_buf = BytesMut::with_capacity(BUF_LEN);
     let mut res_buf = BytesMut::with_capacity(BUF_LEN);
     let mut body_buf = BytesMut::with_capacity(BUF_LEN);
@@ -140,17 +143,17 @@ fn each_connection_loop<T: HttpService>(stream: &mut TcpStream, mut service: T) 
         // prepare the requests
         if read_cnt > 0 {
             loop {
-                let mut headers = [MaybeUninit::uninit(); request::MAX_HEADERS];
-                let req = match request::decode(&mut headers, &mut req_buf, stream)? {
+                let mut headers = [MaybeUninit::uninit(); request::request::MAX_HEADERS];
+                let req = match request::request::decode(&mut headers, &mut req_buf, stream)? {
                     Some(req) => req,
                     None => break,
                 };
                 let mut rsp = Response::new(&mut body_buf);
                 match service.handler(req, &mut rsp) {
-                    Ok(()) => response::encode(rsp, &mut res_buf),
+                    Ok(()) => response::response::encode(rsp, &mut res_buf),
                     Err(e) => {
                         eprintln!("service err = {:?}", e);
-                        response::encode_error(e, &mut res_buf);
+                        response::response::encode_error(e, &mut res_buf);
                     }
                 }
             }
@@ -218,7 +221,6 @@ fn each_connection_loop<T: HttpService>(stream: &mut TcpStream, mut service: T) 
         res_buf.clear();
     }
 }
-
 
 impl<T: HttpService + Clone + Send + Sync + 'static> HttpServer<T> {
     pub fn start<L: ToSocketAddrs>(self, addr: L) -> io::Result<coroutine::JoinHandle<()>> {
