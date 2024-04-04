@@ -1,7 +1,7 @@
 # server_nano
 
 A tiny, fast, and friendly web server written in rust and inspired by express.
-It uses [may](https://github.com/Xudong-Huang/may) to coroutines
+It uses [may](https://github.com/Xudong-Huang/may) to coroutines and is one of the fastest (unix) servers today.
 
 ## Usage
 
