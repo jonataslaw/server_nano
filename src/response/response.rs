@@ -1,8 +1,9 @@
-use bytes::BytesMut;
-
 use std::io;
 
-use crate::request::decode::MAX_HEADERS;
+use crate::request::request::MAX_HEADERS;
+
+use bytes::{BufMut, BytesMut};
+use serde;
 
 pub struct Response<'a> {
     headers: [&'static str; MAX_HEADERS],
@@ -18,13 +19,14 @@ enum Body {
     Vec(Vec<u8>),
     Dummy,
 }
+
 struct StatusMessage {
     code: usize,
     msg: &'static str,
 }
 
 impl<'a> Response<'a> {
-    pub fn new(res_buf: &'a mut BytesMut) -> Response {
+    pub(crate) fn new(res_buf: &'a mut BytesMut) -> Response {
         let headers: [&'static str; 16] = [""; 16];
 
         Response {
@@ -53,8 +55,31 @@ impl<'a> Response<'a> {
     }
 
     #[inline]
-    pub fn str(&mut self, s: &'static str) -> io::Result<()> {
+    pub fn body(&mut self, s: &'static str) {
         self.body = Body::StaticStr(s);
+    }
+
+    #[inline]
+    pub fn body_vec(&mut self, v: Vec<u8>) {
+        self.body = Body::Vec(v);
+    }
+
+    #[inline]
+    pub fn body_bytes(&mut self, v: &[u8]) {
+        self.body = Body::Vec(v.to_vec());
+    }
+
+    #[inline]
+    pub fn json<T: serde::Serialize>(&mut self, v: &T) -> io::Result<()> {
+        self.header("Content-Type: application/json");
+        let w = self.body_mut().writer();
+        serde_json::to_writer(w, v)?;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn str(&mut self, s: String) -> io::Result<()> {
+        self.body = Body::Str(s);
         Ok(())
     }
 
@@ -66,20 +91,6 @@ impl<'a> Response<'a> {
         Ok(())
     }
 
-    pub fn json<Value: serde::ser::Serialize>(&mut self, value: &Value) -> io::Result<()> {
-        let json_str = serde_json::to_string(value)?;
-        self.header("Content-Type: application/json");
-        self.send(json_str)?;
-        Ok(())
-    }
-
-    pub fn bytes(&mut self, content: &[u8]) -> io::Result<()> {
-        match content.len() {
-            0 => self.body = Body::Dummy,
-            _ => self.body = Body::Vec(content.to_vec()),
-        }
-        Ok(())
-    }
 
     #[inline]
     pub fn body_mut(&mut self) -> &mut BytesMut {
@@ -100,7 +111,6 @@ impl<'a> Response<'a> {
         }
         self.res_buf
     }
-
     #[inline]
     fn body_len(&self) -> usize {
         match self.body {
@@ -124,38 +134,38 @@ impl<'a> Response<'a> {
 
 impl<'a> Drop for Response<'a> {
     fn drop(&mut self) {
-        unsafe { self.res_buf.set_len(0) };
+        self.res_buf.clear();
     }
 }
 
-pub fn encode(mut res: Response, buf: &mut BytesMut) {
-    if res.status_message.code == 200 {
+pub(crate) fn encode(mut rsp: Response, buf: &mut BytesMut) {
+    if rsp.status_message.code == 200 {
         buf.extend_from_slice(b"HTTP/1.1 200 Ok\r\nServer: M\r\nDate: ");
     } else {
         buf.extend_from_slice(b"HTTP/1.1 ");
         let mut code = itoa::Buffer::new();
-        buf.extend_from_slice(code.format(res.status_message.code).as_bytes());
+        buf.extend_from_slice(code.format(rsp.status_message.code).as_bytes());
         buf.extend_from_slice(b" ");
-        buf.extend_from_slice(res.status_message.msg.as_bytes());
+        buf.extend_from_slice(rsp.status_message.msg.as_bytes());
         buf.extend_from_slice(b"\r\nServer: M\r\nDate: ");
     }
     crate::response::date::append_date(buf);
     buf.extend_from_slice(b"\r\nContent-Length: ");
     let mut length = itoa::Buffer::new();
-    buf.extend_from_slice(length.format(res.body_len()).as_bytes());
+    buf.extend_from_slice(length.format(rsp.body_len()).as_bytes());
 
     // SAFETY: we already have bound check when insert headers
-    let headers = unsafe { res.headers.get_unchecked(..res.headers_len) };
+    let headers = unsafe { rsp.headers.get_unchecked(..rsp.headers_len) };
     for h in headers {
         buf.extend_from_slice(b"\r\n");
         buf.extend_from_slice(h.as_bytes());
     }
 
     buf.extend_from_slice(b"\r\n\r\n");
-    buf.extend_from_slice(res.get_body());
+    buf.extend_from_slice(rsp.get_body());
 }
 
-pub fn encode_error(e: io::Error, buf: &mut BytesMut) {
+pub(crate) fn encode_error(e: io::Error, buf: &mut BytesMut) {
     error!("error in service: err = {:?}", e);
     let msg_string = e.to_string();
     let msg = msg_string.as_bytes();
@@ -168,19 +178,4 @@ pub fn encode_error(e: io::Error, buf: &mut BytesMut) {
 
     buf.extend_from_slice(b"\r\n\r\n");
     buf.extend_from_slice(msg);
-}
-
-// impl io::Write for the response body
-pub struct BodyWriter<'a>(pub &'a mut BytesMut);
-
-impl<'a> io::Write for BodyWriter<'a> {
-    #[inline]
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
 }

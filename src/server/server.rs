@@ -1,8 +1,10 @@
-use crate::{Decoded, HttpServer, HttpService, Request, Response, RouteMatcher};
+
 use std::io;
 
+use crate::{http::http_server::{HttpServer, HttpService }, request::request::{RawRequest,Request}, response::response::Response, router::route_matcher::RouteMatcher};
+
 pub type Middleware =
-    Box<dyn Fn(&Request, &mut Response) -> io::Result<()> + Send + Sync + 'static>;
+    Box<dyn Fn(&RawRequest, &mut Response) -> io::Result<()> + Send + Sync + 'static>;
 
 pub type RouteHandler =
     Box<dyn Fn(Request, &mut Response) -> io::Result<()> + Send + Sync + 'static>;
@@ -99,17 +101,20 @@ impl Server {
 }
 
 impl HttpService for Server {
-    fn handler(&mut self, req: Decoded, res: &mut Response) -> io::Result<()> {
+    fn handler(&mut self, req: RawRequest, res: &mut Response) -> io::Result<()> {
         // Run route handler if exists
-        let method = req.raw().method.unwrap();
-        let url = req.raw().path.unwrap();
-        let body = req.body();
+        let method = req.method();
+        let url = req.path();
 
         if let Some(matched_route) = self.route_handlers.match_route(method, url) {
             let parameters = matched_route.parameters;
             let url_parameters = matched_route.url_parameters;
-            let req = Request::new(req, parameters, url_parameters, body);
-            (matched_route.handler)(req, res)
+            let context_req = Request {
+                parameters,
+                url_parameters,
+                req,
+            };
+            (matched_route.handler)(context_req, res)
         } else {
             // No route handler found, return 404
             res.status_code(404, "Not Found");
